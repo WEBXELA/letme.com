@@ -198,7 +198,29 @@ const PropertyPage = () => {
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { (window.location.href = `/apply/${unit.UnitID}`); } }}
                       className="overflow-hidden shadow-medium border-none hover-outline cursor-pointer"
                     >
-                      <div className="relative h-40 md:h-64 overflow-hidden">
+                      {/* Mobile: show images in grid layout */}
+                      <div className="md:hidden">
+                        <div className="grid grid-cols-2 gap-2">
+                          {(unit.Images ? JSON.parse(unit.Images) : [unit.image_url]).map((img: string, i: number) => (
+                            <div key={i} className="relative h-32 rounded-lg overflow-hidden">
+                              <img
+                                src={img || getImageUrl(null, 'unit')}
+                                alt={`${unit.UnitName} ${i + 1}`}
+                                className="w-full h-full object-cover"
+                                onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                              />
+                              {i === 0 && (
+                                <div className="absolute top-2 right-2">
+                                  <Badge className="bg-accent text-accent-foreground shadow-medium">Available</Badge>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Desktop / larger screens: keep single large cover image (previous behavior) */}
+                      <div className="hidden md:block relative h-40 md:h-64 overflow-hidden">
                         <img
                           src={getImageUrl(unit.image_url, 'unit')}
                           alt={unit.UnitName}
@@ -212,9 +234,7 @@ const PropertyPage = () => {
                             Available
                           </Badge>
                         </div>
-                      </div>
-                      
-                      <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
+                      </div>                      <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
                         <div>
                           <h3 className="font-heading text-lg md:text-xl font-bold text-foreground mb-1 md:mb-2">
                             {unit.UnitName}

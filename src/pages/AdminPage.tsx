@@ -63,6 +63,12 @@ const AdminPage = () => {
   // Multi-image selections (not uploaded until submit)
   const [propertyImagesFiles, setPropertyImagesFiles] = useState<File[]>([]);
   const [unitImagesFiles, setUnitImagesFiles] = useState<File[]>([]);
+  // Track existing images from edit mode
+  const [existingPropertyImages, setExistingPropertyImages] = useState<string[]>([]);
+  const [existingUnitImages, setExistingUnitImages] = useState<string[]>([]);
+  // Track images to delete
+  const [propertyImagesToDelete, setPropertyImagesToDelete] = useState<Set<string>>(new Set());
+  const [unitImagesToDelete, setUnitImagesToDelete] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
@@ -297,6 +303,32 @@ const AdminPage = () => {
   };
 
   const handleAddProperty = async () => {
+    // Validation
+    if (!propertyForm.AreaID.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an area.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!propertyForm.AddressID.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an address.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!propertyForm.Description.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a description for the property.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploading(true);
     
     try {
@@ -361,6 +393,40 @@ const AdminPage = () => {
   };
 
   const handleAddUnit = async () => {
+    // Validation
+    if (!unitForm.UnitName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a unit name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!unitForm.PropertyID.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a property.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!unitForm.MonthlyPrice.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a monthly price.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!unitForm.Description.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a description for the unit.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploading(true);
     
     try {
@@ -510,8 +576,14 @@ const AdminPage = () => {
       Images: property.Images || '',
       Description: property.Description || ''
     });
+    
+    // Parse existing images from JSON
+    const existingImages = property.Images ? JSON.parse(property.Images) : [];
+    setExistingPropertyImages(existingImages);
+    setPropertyImagesToDelete(new Set());
+    
     setPropertyImage(null);
-    setPropertyImagePreview(property.image_url || null);
+    setPropertyImagePreview(null);
     setPropertyImagesFiles([]);
     setShowEditPropertyDialog(true);
   };
@@ -548,12 +620,18 @@ const AdminPage = () => {
         additionalUrls = await uploadMultipleImages(propertyImagesFiles, 'property-images', 'properties');
       }
 
+      // Filter out deleted images from existing ones
+      const remainingExistingImages = existingPropertyImages.filter(img => !propertyImagesToDelete.has(img));
+      
+      // Combine remaining existing images with newly uploaded ones
+      const allImages = [...remainingExistingImages, ...additionalUrls];
+
       const updateData: any = {
         Properties: propertyForm.Properties,
         AreaID: parseInt(propertyForm.AreaID),
         AddressID: parseInt(propertyForm.AddressID),
         PlusCode: propertyForm.PlusCode,
-        Images: additionalUrls.length > 0 ? JSON.stringify(additionalUrls) : propertyForm.Images,
+        Images: allImages.length > 0 ? JSON.stringify(allImages) : '',
         Description: propertyForm.Description
       };
 
@@ -612,8 +690,14 @@ const AdminPage = () => {
       Images: unit.Images || '',
       Description: unit.Description || ''
     });
+    
+    // Parse existing images from JSON
+    const existingImages = unit.Images ? JSON.parse(unit.Images) : [];
+    setExistingUnitImages(existingImages);
+    setUnitImagesToDelete(new Set());
+    
     setUnitImage(null);
-    setUnitImagePreview(unit.image_url || null);
+    setUnitImagePreview(null);
     setUnitImagesFiles([]);
     setShowEditUnitDialog(true);
   };
@@ -650,12 +734,18 @@ const AdminPage = () => {
         additionalUnitUrls = await uploadMultipleImages(unitImagesFiles, 'unit-images', 'units');
       }
 
+      // Filter out deleted images from existing ones
+      const remainingExistingImages = existingUnitImages.filter(img => !unitImagesToDelete.has(img));
+      
+      // Combine remaining existing images with newly uploaded ones
+      const allImages = [...remainingExistingImages, ...additionalUnitUrls];
+
       const updateData: any = {
         PropertyID: parseInt(unitForm.PropertyID),
         UnitName: unitForm.UnitName,
         MonthlyPrice: parseFloat(unitForm.MonthlyPrice),
         Available: unitForm.Available,
-        Images: additionalUnitUrls.length > 0 ? JSON.stringify(additionalUnitUrls) : unitForm.Images,
+        Images: allImages.length > 0 ? JSON.stringify(allImages) : '',
         Description: unitForm.Description
       };
 
@@ -685,6 +775,8 @@ const AdminPage = () => {
       setUnitImage(null);
       setUnitImagePreview(null);
       setUnitImagesFiles([]);
+      setExistingUnitImages([]);
+      setUnitImagesToDelete(new Set());
 
       toast({
         title: "Unit Updated",
@@ -873,7 +965,7 @@ const AdminPage = () => {
                   <div className="space-y-4 pr-2">
                     {/* Area Selection */}
                     <div className="space-y-3">
-                      <Label className="text-sm font-medium text-gray-700">Area</Label>
+                      <Label className="text-sm font-medium text-gray-700">Area <span className="text-red-500">*</span></Label>
                       <div className="space-y-2">
                         {areas.map((area) => (
                           <div key={area.AreaID} className="flex items-center">
@@ -896,7 +988,7 @@ const AdminPage = () => {
 
                     {/* Address */}
                     <div className="space-y-2">
-                      <Label htmlFor="address" className="text-sm font-medium text-gray-700">Address</Label>
+                      <Label htmlFor="address" className="text-sm font-medium text-gray-700">Address <span className="text-red-500">*</span></Label>
                       <Input
                         id="address"
                         value={propertyForm.AddressID ? addresses.find(a => a.AddressId.toString() === propertyForm.AddressID)?.Address || '' : ''}
@@ -906,7 +998,7 @@ const AdminPage = () => {
                             setPropertyForm(prev => ({ ...prev, AddressID: address.AddressId.toString() }));
                           }
                         }}
-                        placeholder="Enter property address"
+                        placeholder=""
                         className="bg-gray-50 border-gray-200"
                       />
                     </div>
@@ -925,12 +1017,12 @@ const AdminPage = () => {
 
                     {/* Description */}
                     <div className="space-y-2">
-                      <Label htmlFor="description" className="text-sm font-medium text-gray-700">Description</Label>
+                      <Label htmlFor="description" className="text-sm font-medium text-gray-700">Description <span className="text-red-500">*</span></Label>
                       <Textarea
                         id="description"
                         value={propertyForm.Description}
                         onChange={(e) => setPropertyForm(prev => ({ ...prev, Description: e.target.value }))}
-                        placeholder="Newly refurbished studio flats in an old Victorian building on the outskirts of Westbourne. Suitable for pets. Quiet building."
+                        placeholder=""
                         rows={4}
                         className="bg-gray-50 border-gray-200"
                       />
@@ -972,19 +1064,19 @@ const AdminPage = () => {
                   <div className="space-y-4 pr-2">
                     {/* Unit Name */}
                     <div className="space-y-2">
-                      <Label htmlFor="unitName" className="text-sm font-medium text-gray-700">Unit name</Label>
+                      <Label htmlFor="unitName" className="text-sm font-medium text-gray-700">Unit name <span className="text-red-500">*</span></Label>
                       <Input
                         id="unitName"
                         value={unitForm.UnitName}
                         onChange={(e) => setUnitForm(prev => ({ ...prev, UnitName: e.target.value }))}
-                        placeholder="Flat 1"
+                        placeholder=""
                         className="bg-gray-50 border-gray-200"
                       />
                     </div>
 
                     {/* Property Selection */}
                     <div className="space-y-2">
-                      <Label htmlFor="property" className="text-sm font-medium text-gray-700">Property</Label>
+                      <Label htmlFor="property" className="text-sm font-medium text-gray-700">Property <span className="text-red-500">*</span></Label>
                       <Select value={unitForm.PropertyID} onValueChange={(value) => setUnitForm(prev => ({ ...prev, PropertyID: value }))}>
                         <SelectTrigger className="bg-gray-50 border-gray-200">
                           <SelectValue placeholder="Select property" />
@@ -1001,13 +1093,13 @@ const AdminPage = () => {
 
                     {/* Monthly Price */}
                     <div className="space-y-2">
-                      <Label htmlFor="monthlyPrice" className="text-sm font-medium text-gray-700">Monthly price</Label>
+                      <Label htmlFor="monthlyPrice" className="text-sm font-medium text-gray-700">Monthly price <span className="text-red-500">*</span></Label>
                       <Input
                         id="monthlyPrice"
                         type="number"
                         value={unitForm.MonthlyPrice}
                         onChange={(e) => setUnitForm(prev => ({ ...prev, MonthlyPrice: e.target.value }))}
-                        placeholder="820.00"
+                        placeholder=""
                         step="0.01"
                         className="bg-gray-50 border-gray-200"
                       />
@@ -1046,12 +1138,12 @@ const AdminPage = () => {
 
                     {/* Description */}
                     <div className="space-y-2">
-                      <Label htmlFor="unitDescription" className="text-sm font-medium text-gray-700">Description</Label>
+                      <Label htmlFor="unitDescription" className="text-sm font-medium text-gray-700">Description <span className="text-red-500">*</span></Label>
                       <Textarea
                         id="unitDescription"
                         value={unitForm.Description}
                         onChange={(e) => setUnitForm(prev => ({ ...prev, Description: e.target.value }))}
-                        placeholder="Beautiful double bed studio flat with wetroom shower room and separate bed area. This flat is available on a flexible 3 month lease. There is NO DEPOSIT required."
+                        placeholder=""
                         rows={4}
                         className="bg-gray-50 border-gray-200"
                       />
@@ -1093,7 +1185,7 @@ const AdminPage = () => {
           <form onSubmit={handleUpdateProperty} className="space-y-4 pr-2">
             {/* Area Selection */}
             <div className="space-y-3">
-              <Label className="text-sm font-medium text-gray-700">Area</Label>
+              <Label className="text-sm font-medium text-gray-700">Area <span className="text-red-500">*</span></Label>
               <div className="space-y-2">
                 {areas.map((area) => (
                   <div key={area.AreaID} className="flex items-center">
@@ -1116,7 +1208,7 @@ const AdminPage = () => {
 
             {/* Address */}
             <div className="space-y-2">
-              <Label htmlFor="editAddress" className="text-sm font-medium text-gray-700">Address</Label>
+              <Label htmlFor="editAddress" className="text-sm font-medium text-gray-700">Address <span className="text-red-500">*</span></Label>
               <Input
                 id="editAddress"
                 value={propertyForm.AddressID ? addresses.find(a => a.AddressId.toString() === propertyForm.AddressID)?.Address || '' : ''}
@@ -1126,7 +1218,7 @@ const AdminPage = () => {
                     setPropertyForm(prev => ({ ...prev, AddressID: address.AddressId.toString() }));
                   }
                 }}
-                placeholder="Enter property address"
+                placeholder=""
                 className="bg-gray-50 border-gray-200"
                 required
               />
@@ -1146,20 +1238,65 @@ const AdminPage = () => {
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="editDescription" className="text-sm font-medium text-gray-700">Description</Label>
+              <Label htmlFor="editDescription" className="text-sm font-medium text-gray-700">Description <span className="text-red-500">*</span></Label>
               <Textarea
                 id="editDescription"
                 value={propertyForm.Description}
                 onChange={(e) => setPropertyForm(prev => ({ ...prev, Description: e.target.value }))}
-                placeholder="Property description"
+                placeholder=""
                 rows={4}
                 className="bg-gray-50 border-gray-200"
               />
             </div>
 
+            {/* Existing Images Gallery */}
+            {existingPropertyImages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">Existing Photos ({existingPropertyImages.length})</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {existingPropertyImages.map((imageUrl, index) => (
+                    <div 
+                      key={index} 
+                      className={`relative h-24 rounded-lg overflow-hidden border-2 ${
+                        propertyImagesToDelete.has(imageUrl) 
+                          ? 'border-red-500 opacity-50' 
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={`Existing Property ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newSet = new Set(propertyImagesToDelete);
+                          if (newSet.has(imageUrl)) {
+                            newSet.delete(imageUrl);
+                          } else {
+                            newSet.add(imageUrl);
+                          }
+                          setPropertyImagesToDelete(newSet);
+                        }}
+                        className={`absolute top-1 right-1 p-1 rounded-full text-white text-xs font-bold ${
+                          propertyImagesToDelete.has(imageUrl)
+                            ? 'bg-green-500 hover:bg-green-600'
+                            : 'bg-red-500 hover:bg-red-600'
+                        }`}
+                      >
+                        {propertyImagesToDelete.has(imageUrl) ? '↺' : '✕'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Multi-image Upload */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Upload Photos (max 5 photos)</Label>
+              <Label className="text-sm font-medium text-gray-700">Upload New Photos (max 5 photos)</Label>
               <MultiImageUpload
                 value={propertyImagesFiles}
                 onChange={setPropertyImagesFiles}
@@ -1189,12 +1326,12 @@ const AdminPage = () => {
           <form onSubmit={handleUpdateUnit} className="space-y-4 pr-2">
             {/* Unit Name */}
             <div className="space-y-2">
-              <Label htmlFor="editUnitName" className="text-sm font-medium text-gray-700">Unit name</Label>
+              <Label htmlFor="editUnitName" className="text-sm font-medium text-gray-700">Unit name <span className="text-red-500">*</span></Label>
               <Input
                 id="editUnitName"
                 value={unitForm.UnitName}
                 onChange={(e) => setUnitForm(prev => ({ ...prev, UnitName: e.target.value }))}
-                placeholder="Flat 1"
+                placeholder=""
                 className="bg-gray-50 border-gray-200"
                 required
               />
@@ -1202,7 +1339,7 @@ const AdminPage = () => {
 
             {/* Property Selection */}
             <div className="space-y-2">
-              <Label htmlFor="editProperty" className="text-sm font-medium text-gray-700">Property</Label>
+              <Label htmlFor="editProperty" className="text-sm font-medium text-gray-700">Property <span className="text-red-500">*</span></Label>
               <Select value={unitForm.PropertyID} onValueChange={(value) => setUnitForm(prev => ({ ...prev, PropertyID: value }))}>
                 <SelectTrigger className="bg-gray-50 border-gray-200">
                   <SelectValue placeholder="Select property" />
@@ -1219,13 +1356,13 @@ const AdminPage = () => {
 
             {/* Monthly Price */}
             <div className="space-y-2">
-              <Label htmlFor="editMonthlyPrice" className="text-sm font-medium text-gray-700">Monthly price</Label>
+              <Label htmlFor="editMonthlyPrice" className="text-sm font-medium text-gray-700">Monthly price <span className="text-red-500">*</span></Label>
               <Input
                 id="editMonthlyPrice"
                 type="number"
                 value={unitForm.MonthlyPrice}
                 onChange={(e) => setUnitForm(prev => ({ ...prev, MonthlyPrice: e.target.value }))}
-                placeholder="820.00"
+                placeholder=""
                 step="0.01"
                 className="bg-gray-50 border-gray-200"
                 required
@@ -1265,20 +1402,65 @@ const AdminPage = () => {
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="editUnitDescription" className="text-sm font-medium text-gray-700">Description</Label>
+              <Label htmlFor="editUnitDescription" className="text-sm font-medium text-gray-700">Description <span className="text-red-500">*</span></Label>
               <Textarea
                 id="editUnitDescription"
                 value={unitForm.Description}
                 onChange={(e) => setUnitForm(prev => ({ ...prev, Description: e.target.value }))}
-                placeholder="Unit description"
+                placeholder=""
                 rows={4}
                 className="bg-gray-50 border-gray-200"
               />
             </div>
 
+            {/* Existing Images Gallery */}
+            {existingUnitImages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">Existing Photos ({existingUnitImages.length})</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {existingUnitImages.map((imageUrl, index) => (
+                    <div 
+                      key={index} 
+                      className={`relative h-24 rounded-lg overflow-hidden border-2 ${
+                        unitImagesToDelete.has(imageUrl) 
+                          ? 'border-red-500 opacity-50' 
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={`Existing Unit ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newSet = new Set(unitImagesToDelete);
+                          if (newSet.has(imageUrl)) {
+                            newSet.delete(imageUrl);
+                          } else {
+                            newSet.add(imageUrl);
+                          }
+                          setUnitImagesToDelete(newSet);
+                        }}
+                        className={`absolute top-1 right-1 p-1 rounded-full text-white text-xs font-bold ${
+                          unitImagesToDelete.has(imageUrl)
+                            ? 'bg-green-500 hover:bg-green-600'
+                            : 'bg-red-500 hover:bg-red-600'
+                        }`}
+                      >
+                        {unitImagesToDelete.has(imageUrl) ? '↺' : '✕'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Multi-image Upload */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Upload Photos (max 5 photos)</Label>
+              <Label className="text-sm font-medium text-gray-700">Upload New Photos (max 5 photos)</Label>
               <MultiImageUpload
                 value={unitImagesFiles}
                 onChange={setUnitImagesFiles}
