@@ -8,7 +8,7 @@ import { MapPin, Users, Bed, Wifi, Zap, Home, ArrowRight, Calendar, PoundSterlin
 import { Link, useParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase, Unit, Property } from "@/lib/supabase";
-import { getImageUrl } from "@/lib/imageUtils";
+import { getImageUrl, parseImageUrls, DEFAULT_IMAGES } from "@/lib/imageUtils";
 
 const UnitPage = () => {
   const { unitId } = useParams<{ unitId: string }>();
@@ -174,27 +174,32 @@ const UnitPage = () => {
             <div className="max-w-6xl mx-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                 {/* Primary Image */}
-                <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                  <img
-                    src={getImageUrl(unit.image_url, 'unit')}
-                    alt={`${unit.UnitName} - Main Image`}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                    onError={(e) => {
-                      e.currentTarget.src = getImageUrl(null, 'unit');
-                    }}
-                  />
-                </div>
-                
+                {(() => {
+                  const imgs = parseImageUrls(unit.Images);
+                  const primary = imgs.length > 0 ? imgs[0] : (unit.image_url || null);
+                  const hasImage = primary && primary !== DEFAULT_IMAGES.unit;
+                  return (
+                    <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
+                      {hasImage ? (
+                        <img
+                          src={primary as string}
+                          alt={`${unit.UnitName} - Main Image`}
+                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                          onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
                 {/* Additional Images from JSON array */}
-                {unit.Images && JSON.parse(unit.Images).map((image: string, index: number) => (
+                {parseImageUrls(unit.Images).map((image: string, index: number) => (
                   <div key={index} className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
                     <img
                       src={image}
                       alt={`${unit.UnitName} - Image ${index + 1}`}
                       className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                      onError={(e) => {
-                        e.currentTarget.src = getImageUrl(null, 'unit');
-                      }}
+                      onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
                     />
                   </div>
                 ))}

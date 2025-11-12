@@ -8,7 +8,7 @@ import { MapPin, Users, Bed, Wifi, Zap, Home, ArrowRight, Calendar, PoundSterlin
 import { Link, useParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase, Property, Unit } from "@/lib/supabase";
-import { getImageUrl, parseImageUrls } from "@/lib/imageUtils";
+import { getImageUrl, parseImageUrls, getPrimaryImageUrl, DEFAULT_IMAGES } from "@/lib/imageUtils";
 
 const PropertyPage = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
@@ -145,16 +145,23 @@ const PropertyPage = () => {
             <div className="max-w-6xl mx-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                 {/* Primary Image */}
-                <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                  <img
-                    src={getImageUrl(property.image_url, 'property')}
-                    alt={`${property.Properties} - Main Image`}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                    onError={(e) => {
-                      e.currentTarget.src = getImageUrl(null, 'property');
-                    }}
-                  />
-                </div>
+                {(() => {
+                  const imgs = parseImageUrls(property.Images);
+                  const primary = imgs.length > 0 ? imgs[0] : (property.image_url || null);
+                  const hasImage = primary && primary !== DEFAULT_IMAGES.property;
+                  return (
+                    <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
+                      {hasImage ? (
+                        <img
+                          src={primary as string}
+                          alt={`${property.Properties} - Main Image`}
+                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                          onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })()}
                 
                 {/* Additional Images from JSON array */}
                 {parseImageUrls(property.Images).map((image: string, index: number) => (
@@ -219,22 +226,29 @@ const PropertyPage = () => {
                         </div>
                       </div>
 
-                      {/* Desktop / larger screens: keep single large cover image (previous behavior) */}
+                      {/* Desktop / larger screens: show primary image only if a real image exists */}
                       <div className="hidden md:block relative h-40 md:h-64 overflow-hidden">
-                        <img
-                          src={getImageUrl(unit.image_url, 'unit')}
-                          alt={unit.UnitName}
-                          className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                          onError={(e) => {
-                            e.currentTarget.src = getImageUrl(null, 'unit');
-                          }}
-                        />
-                        <div className="absolute top-4 right-4">
-                          <Badge className="bg-accent text-accent-foreground shadow-medium">
-                            Available
-                          </Badge>
-                        </div>
-                      </div>                      <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
+                        {(() => {
+                          const imgs = unit.Images ? parseImageUrls(unit.Images) : (unit.image_url ? [unit.image_url] : []);
+                          const primary = imgs.length > 0 ? imgs[0] : null;
+                          const hasImage = primary && primary !== DEFAULT_IMAGES.unit;
+                          return hasImage ? (
+                            <>
+                              <img
+                                src={primary as string}
+                                alt={unit.UnitName}
+                                className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
+                                onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                              />
+                              <div className="absolute top-4 right-4">
+                                <Badge className="bg-accent text-accent-foreground shadow-medium">Available</Badge>
+                              </div>
+                            </>
+                          ) : null;
+                        })()}
+                      </div>
+
+                      <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
                         <div>
                           <h3 className="font-heading text-lg md:text-xl font-bold text-foreground mb-1 md:mb-2">
                             {unit.UnitName}

@@ -8,7 +8,7 @@ import { MapPin, Home, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase, Property, Unit } from "@/lib/supabase";
-import { getImageUrl } from "@/lib/imageUtils";
+import { getImageUrl, parseImageUrls, DEFAULT_IMAGES } from "@/lib/imageUtils";
 
 const YeovilPage = () => {
   const [properties, setProperties] = useState<(Property & { units?: Unit[]; availableCount?: number; minPrice?: number; maxPrice?: number })[]>([]);
@@ -119,18 +119,25 @@ const YeovilPage = () => {
                           </div>
 
                           <div className="relative h-40 md:h-64 overflow-hidden">
-                            {/* Primary Image */}
-                            <img
-                              src={getImageUrl(property.image_url, 'property')}
-                              alt={property.Properties || 'Property'}
-                              className="w-full h-full object-cover"
-                              onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
-                            />
-                            
+                            {/* Primary Image (only if a real image exists) */}
+                            {(() => {
+                              const imgs = parseImageUrls(property.Images);
+                              const primary = imgs.length > 0 ? imgs[0] : (property.image_url || null);
+                              const hasImage = primary && primary !== DEFAULT_IMAGES.property;
+                              return hasImage ? (
+                                <img
+                                  src={primary as string}
+                                  alt={property.Properties || 'Property'}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
+                                />
+                              ) : null;
+                            })()}
+
                             {/* Additional Images Overlay */}
-                            {property.Images && JSON.parse(property.Images).length > 0 && (
+                            {parseImageUrls(property.Images).length > 0 && (
                               <div className="absolute bottom-2 right-2 flex gap-1">
-                                {JSON.parse(property.Images).slice(0, 3).map((image: string, index: number) => (
+                                {parseImageUrls(property.Images).slice(0, 3).map((image: string, index: number) => (
                                   <div key={index} className="w-8 h-8 rounded border border-white overflow-hidden">
                                     <img
                                       src={image}
@@ -140,9 +147,9 @@ const YeovilPage = () => {
                                     />
                                   </div>
                                 ))}
-                                {JSON.parse(property.Images).length > 3 && (
+                                {parseImageUrls(property.Images).length > 3 && (
                                   <div className="w-8 h-8 rounded border border-white bg-black bg-opacity-50 flex items-center justify-center">
-                                    <span className="text-white text-xs font-bold">+{JSON.parse(property.Images).length - 3}</span>
+                                    <span className="text-white text-xs font-bold">+{parseImageUrls(property.Images).length - 3}</span>
                                   </div>
                                 )}
                               </div>

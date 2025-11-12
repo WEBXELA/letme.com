@@ -590,8 +590,14 @@ const AdminPage = () => {
       Description: property.Description || ''
     });
     
-  // Parse existing images from JSON (safe)
-  const existingImages = parseImageUrls(property.Images);
+  // Parse existing images from JSON (safe) and ensure we only show property images (not unit images)
+  const existingImages = parseImageUrls(property.Images).filter((i: any) => {
+    if (!i) return false;
+    // Exclude known unit image buckets/paths and unit placeholder
+    if (i === DEFAULT_IMAGES.unit) return false;
+    if (typeof i === 'string' && (i.includes('unit-images') || i.includes('/units/'))) return false;
+    return true;
+  });
     setExistingPropertyImages(existingImages);
     setPropertyImagesToDelete(new Set());
     
@@ -707,7 +713,13 @@ const AdminPage = () => {
     });
     
   // Parse existing images from JSON (safe)
-  const existingImages = parseImageUrls(unit.Images);
+  const existingImages = parseImageUrls(unit.Images).filter((i: any) => {
+    if (!i) return false;
+    // Exclude known property image buckets/paths and property placeholder
+    if (i === DEFAULT_IMAGES.property) return false;
+    if (typeof i === 'string' && (i.includes('property-images') || i.includes('/properties/'))) return false;
+    return true;
+  });
     setExistingUnitImages(existingImages);
     setUnitImagesToDelete(new Set());
     

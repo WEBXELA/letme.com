@@ -8,7 +8,7 @@ import { MapPin, Home, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase, Property, Unit } from "@/lib/supabase";
-import { getImageUrl } from "@/lib/imageUtils";
+import { getImageUrl, parseImageUrls, DEFAULT_IMAGES } from "@/lib/imageUtils";
 
 const WeymouthPage = () => {
   const [properties, setProperties] = useState<(Property & { units?: Unit[]; availableCount?: number; minPrice?: number; maxPrice?: number })[]>([]);
@@ -105,95 +105,107 @@ const WeymouthPage = () => {
 
                 {properties.length > 0 ? (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-                    {properties.map((property) => (
-                      <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
-                        <Card className="overflow-hidden shadow-medium border-none hover-outline cursor-pointer">
-                          <div className="p-4 md:hidden">
-                            <h3 className="font-heading text-lg font-bold text-foreground mb-1">
-                              {property.Properties || `Property ${property.PropertyID}`}
-                            </h3>
-                            <div className="flex items-center text-muted-foreground gap-1">
-                              <MapPin className="h-3 w-3" />
-                              <span className="text-xs line-clamp-1">{property.addresses?.Address}</span>
-                            </div>
-                          </div>
+                    {properties.map((property) => {
+                      const imgs = parseImageUrls(property.Images)
+                        .filter((i: any) => i && i !== DEFAULT_IMAGES.property);
+                      const primaryImage = property.image_url && property.image_url !== DEFAULT_IMAGES.property
+                        ? property.image_url
+                        : (imgs[0] ?? null);
 
-                          <div className="relative h-40 md:h-64 overflow-hidden">
-                            {/* Primary Image */}
-                            <img
-                              src={getImageUrl(property.image_url, 'property')}
-                              alt={property.Properties || 'Property'}
-                              className="w-full h-full object-cover"
-                              onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
-                            />
-                            
-                            {/* Additional Images Overlay */}
-                            {property.Images && JSON.parse(property.Images).length > 0 && (
-                              <div className="absolute bottom-2 right-2 flex gap-1">
-                                {JSON.parse(property.Images).slice(0, 3).map((image: string, index: number) => (
-                                  <div key={index} className="w-8 h-8 rounded border border-white overflow-hidden">
-                                    <img
-                                      src={image}
-                                      alt={`Additional ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
-                                    />
-                                  </div>
-                                ))}
-                                {JSON.parse(property.Images).length > 3 && (
-                                  <div className="w-8 h-8 rounded border border-white bg-black bg-opacity-50 flex items-center justify-center">
-                                    <span className="text-white text-xs font-bold">+{JSON.parse(property.Images).length - 3}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            
-                            {(property.availableCount || 0) > 0 && (
-                              <div className="hidden md:block absolute top-4 right-4">
-                                <Badge className="bg-accent text-accent-foreground shadow-medium">
-                                  {property.availableCount} Available
-                                </Badge>
-                              </div>
-                            )}
-                          </div>
-
-                          <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
-                            <div className="hidden md:block">
-                              <h3 className="font-heading text-xl font-bold text-foreground mb-2">
+                      return (
+                        <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
+                          <Card className="overflow-hidden shadow-medium border-none hover-outline cursor-pointer">
+                            <div className="p-4 md:hidden">
+                              <h3 className="font-heading text-lg font-bold text-foreground mb-1">
                                 {property.Properties || `Property ${property.PropertyID}`}
                               </h3>
                               <div className="flex items-center text-muted-foreground gap-1">
-                                <MapPin className="h-4 w-4" />
-                                <span className="text-sm line-clamp-1">{property.addresses?.Address}</span>
+                                <MapPin className="h-3 w-3" />
+                                <span className="text-xs line-clamp-1">{property.addresses?.Address}</span>
                               </div>
                             </div>
 
-                            {property.Description && (
-                              <p className="text-xs md:text-sm text-muted-foreground md:line-clamp-3">
-                                {property.Description}
-                              </p>
-                            )}
-
-                            <div className="pt-4 border-t border-border space-y-3">
-                              {property.availableCount && property.availableCount > 0 ? (
-                                <>
-                                  <p className="text-base md:text-lg font-bold text-foreground">
-                                    {property.minPrice === property.maxPrice || property.maxPrice === undefined
-                                      ? `£${property.minPrice} pcm`
-                                      : `£${property.minPrice} - £${property.maxPrice} pcm`}
-                                  </p>
-                                  <Button size="sm" className="w-full bg-[#F2B41E] hover:bg-[#E0A61A] text-black font-semibold">
-                                    {`View ${property.availableCount} available units in this building`}
-                                  </Button>
-                                </>
+                            <div className="relative h-40 md:h-64 overflow-hidden">
+                              {/* Primary Image (only show if a real image exists) */}
+                              {primaryImage ? (
+                                <img
+                                  src={getImageUrl(primaryImage, 'property')}
+                                  alt={property.Properties || 'Property'}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
                               ) : (
-                                <p className="text-xs md:text-sm text-muted-foreground">No units available</p>
+                                <div className="w-full h-full bg-gray-100" />
+                              )}
+
+                              {/* Additional Images Overlay */}
+                              {imgs.length > 0 && (
+                                <div className="absolute bottom-2 right-2 flex gap-1">
+                                  {imgs.slice(0, 3).map((image: string, index: number) => (
+                                    <div key={index} className="w-8 h-8 rounded border border-white overflow-hidden">
+                                      <img
+                                        src={getImageUrl(image, 'property')}
+                                        alt={`Additional ${index + 1}`}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                      />
+                                    </div>
+                                  ))}
+                                  {imgs.length > 3 && (
+                                    <div className="w-8 h-8 rounded border border-white bg-black bg-opacity-50 flex items-center justify-center">
+                                      <span className="text-white text-xs font-bold">+{imgs.length - 3}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {(property.availableCount || 0) > 0 && (
+                                <div className="hidden md:block absolute top-4 right-4">
+                                  <Badge className="bg-accent text-accent-foreground shadow-medium">
+                                    {property.availableCount} Available
+                                  </Badge>
+                                </div>
                               )}
                             </div>
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    ))}
+
+                            <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
+                              <div className="hidden md:block">
+                                <h3 className="font-heading text-xl font-bold text-foreground mb-2">
+                                  {property.Properties || `Property ${property.PropertyID}`}
+                                </h3>
+                                <div className="flex items-center text-muted-foreground gap-1">
+                                  <MapPin className="h-4 w-4" />
+                                  <span className="text-sm line-clamp-1">{property.addresses?.Address}</span>
+                                </div>
+                              </div>
+
+                              {property.Description && (
+                                <p className="text-xs md:text-sm text-muted-foreground md:line-clamp-3">
+                                  {property.Description}
+                                </p>
+                              )}
+
+                              <div className="pt-4 border-t border-border space-y-3">
+                                {property.availableCount && property.availableCount > 0 ? (
+                                  <>
+                                    <p className="text-base md:text-lg font-bold text-foreground">
+                                      {property.minPrice === property.maxPrice || property.maxPrice === undefined
+                                        ? `£${property.minPrice} pcm`
+                                        : `£${property.minPrice} - £${property.maxPrice} pcm`}
+                                    </p>
+                                    <Button size="sm" className="w-full bg-[#F2B41E] hover:bg-[#E0A61A] text-black font-semibold">
+                                      {`View ${property.availableCount} available units in this building`}
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <p className="text-xs md:text-sm text-muted-foreground">No units available</p>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12">
