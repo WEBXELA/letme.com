@@ -13,7 +13,7 @@ import { supabase, Property, Unit, Area, Address } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import ImageUpload from "@/components/ImageUpload";
 import MultiImageUpload from "@/components/MultiImageUpload";
-import { validateImage, generateFileName, getImageUrl, getPrimaryImageUrl, resizeAndCompressImage, stringifyImageUrls, parseImageUrls } from "@/lib/imageUtils";
+import { validateImage, generateFileName, getImageUrl, getPrimaryImageUrl, resizeAndCompressImage, stringifyImageUrls, parseImageUrls, DEFAULT_IMAGES } from "@/lib/imageUtils";
 
 const AdminPage = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -38,6 +38,8 @@ const AdminPage = () => {
   const [viewUnit, setViewUnit] = useState<Unit | null>(null);
   const [showViewPropertyDialog, setShowViewPropertyDialog] = useState(false);
   const [showViewUnitDialog, setShowViewUnitDialog] = useState(false);
+  // Track which property rows are expanded to show units
+  const [expandedProperties, setExpandedProperties] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [propertyImagePreview, setPropertyImagePreview] = useState<string | null>(null);
@@ -181,8 +183,13 @@ const AdminPage = () => {
   };
 
   const handlePropertyImageRemove = () => {
-    setPropertyImage(null);
+  setPropertyImage(null);
+  if (editingProperty) {
+    const primaryPropImage = getPrimaryImageUrl(editingProperty.Images, 'property');
+    setPropertyImagePreview(primaryPropImage && primaryPropImage !== DEFAULT_IMAGES.property ? primaryPropImage : null);
+  } else {
     setPropertyImagePreview(null);
+  }
   };
 
   const handleUnitImageSelect = (file: File) => {
@@ -191,8 +198,13 @@ const AdminPage = () => {
   };
 
   const handleUnitImageRemove = () => {
-    setUnitImage(null);
+  setUnitImage(null);
+  if (editingUnit) {
+    const primaryUnitImage = getPrimaryImageUrl(editingUnit.Images, 'unit');
+    setUnitImagePreview(primaryUnitImage && primaryUnitImage !== DEFAULT_IMAGES.unit ? primaryUnitImage : null);
+  } else {
     setUnitImagePreview(null);
+  }
   };
 
   const handleLogout = async () => {
@@ -430,7 +442,8 @@ const AdminPage = () => {
     setUploading(true);
     
     try {
-      let imageUrl = null;
+      // Avoid saving placeholder as stored image
+      let imageUrl = (editingUnit.image_url && editingUnit.image_url !== DEFAULT_IMAGES.unit) ? editingUnit.image_url : null;
       
       if (unitImage) {
         imageUrl = await uploadImage(unitImage, 'unit-images', 'units');
@@ -577,13 +590,14 @@ const AdminPage = () => {
       Description: property.Description || ''
     });
     
-    // Parse existing images from JSON
-    const existingImages = property.Images ? JSON.parse(property.Images) : [];
+  // Parse existing images from JSON (safe)
+  const existingImages = parseImageUrls(property.Images);
     setExistingPropertyImages(existingImages);
     setPropertyImagesToDelete(new Set());
     
     setPropertyImage(null);
-    setPropertyImagePreview(null);
+    const primaryPropImage = getPrimaryImageUrl(property.Images, 'property');
+    setPropertyImagePreview(primaryPropImage && primaryPropImage !== DEFAULT_IMAGES.property ? primaryPropImage : null);
     setPropertyImagesFiles([]);
     setShowEditPropertyDialog(true);
   };
@@ -594,7 +608,8 @@ const AdminPage = () => {
 
     setUploading(true);
     try {
-      let imageUrl = editingProperty.image_url;
+      // Avoid treating the default placeholder as a real stored image
+      let imageUrl = (editingProperty.image_url && editingProperty.image_url !== DEFAULT_IMAGES.property) ? editingProperty.image_url : null;
 
       if (propertyImage) {
         const fileName = generateFileName(propertyImage.name, 'property');
@@ -691,13 +706,14 @@ const AdminPage = () => {
       Description: unit.Description || ''
     });
     
-    // Parse existing images from JSON
-    const existingImages = unit.Images ? JSON.parse(unit.Images) : [];
+  // Parse existing images from JSON (safe)
+  const existingImages = parseImageUrls(unit.Images);
     setExistingUnitImages(existingImages);
     setUnitImagesToDelete(new Set());
     
     setUnitImage(null);
-    setUnitImagePreview(null);
+    const primaryUnitImage = getPrimaryImageUrl(unit.Images, 'unit');
+    setUnitImagePreview(primaryUnitImage && primaryUnitImage !== DEFAULT_IMAGES.unit ? primaryUnitImage : null);
     setUnitImagesFiles([]);
     setShowEditUnitDialog(true);
   };
@@ -908,46 +924,97 @@ const AdminPage = () => {
           <>
             {/* Properties List */}
             <div className="space-y-3 mb-8">
-              {properties.map((property) => (
-                <div key={property.PropertyID} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="text-gray-900 font-medium">
-                      {property.addresses?.Address || property.Properties || `Property ${property.PropertyID}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleEditProperty(property)}
-                      className="px-3 py-1 text-sm"
-                    >
-                      Edit
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="px-3 py-1 text-sm text-red-600 border-red-200 hover:bg-red-50">
-                          Delete
+              {properties.map((property) => {
+                const unitsForProperty = units.filter(u => u.PropertyID === property.PropertyID);
+                const isExpanded = expandedProperties.has(property.PropertyID);
+                return (
+                  <div key={property.PropertyID} className="bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between p-3">
+                      <div className="flex-1">
+                        <p className="text-gray-900 font-medium">
+                          {property.addresses?.Address || property.Properties || `Property ${property.PropertyID}`}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{unitsForProperty.length} units</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          const next = new Set(expandedProperties);
+                          if (next.has(property.PropertyID)) next.delete(property.PropertyID); else next.add(property.PropertyID);
+                          setExpandedProperties(next);
+                        }}>
+                          {isExpanded ? 'Hide units' : 'Show units'}
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Are you sure you want to delete this property?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            If this property has related units, deletion will fail. You can choose to delete the property along with all its units in the next step.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => confirmDeleteProperty(property)}>
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleEditProperty(property)}
+                          className="px-3 py-1 text-sm"
+                        >
+                          Edit
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="px-3 py-1 text-sm text-red-600 border-red-200 hover:bg-red-50">
+                              Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you sure you want to delete this property?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                If this property has related units, deletion will fail. You can choose to delete the property along with all its units in the next step.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => confirmDeleteProperty(property)}>
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t px-4 py-3">
+                        {unitsForProperty.length > 0 ? (
+                          <div className="space-y-2">
+                            {unitsForProperty.map(u => (
+                              <div key={u.UnitID} className="flex items-center justify-between bg-white rounded p-2">
+                                <div>
+                                  <p className="font-medium">{u.UnitName}</p>
+                                  <p className="text-sm text-muted-foreground">£{u.MonthlyPrice} pcm</p>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button size="sm" variant="ghost" onClick={() => handleEditUnit(u)}>Edit</Button>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="text-red-600">Delete</Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Confirm Delete</AlertDialogTitle>
+                                        <AlertDialogDescription>Are you sure you want to delete this unit?</AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteUnit(u.UnitID)}>Delete</AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No units for this property.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Action Buttons */}

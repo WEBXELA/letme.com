@@ -8,7 +8,7 @@ import { MapPin, Users, Bed, Wifi, Zap, Home, ArrowRight, Calendar, PoundSterlin
 import { Link, useParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase, Property, Unit } from "@/lib/supabase";
-import { getImageUrl } from "@/lib/imageUtils";
+import { getImageUrl, parseImageUrls } from "@/lib/imageUtils";
 
 const PropertyPage = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
@@ -157,7 +157,7 @@ const PropertyPage = () => {
                 </div>
                 
                 {/* Additional Images from JSON array */}
-                {property.Images && JSON.parse(property.Images).map((image: string, index: number) => (
+                {parseImageUrls(property.Images).map((image: string, index: number) => (
                   <div key={index} className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
                     <img
                       src={image}
@@ -201,7 +201,7 @@ const PropertyPage = () => {
                       {/* Mobile: show images in grid layout */}
                       <div className="md:hidden">
                         <div className="grid grid-cols-2 gap-2">
-                          {(unit.Images ? JSON.parse(unit.Images) : [unit.image_url]).map((img: string, i: number) => (
+                          {(unit.Images ? parseImageUrls(unit.Images) : (unit.image_url ? [unit.image_url] : [])).map((img: string, i: number) => (
                             <div key={i} className="relative h-32 rounded-lg overflow-hidden">
                               <img
                                 src={img || getImageUrl(null, 'unit')}
