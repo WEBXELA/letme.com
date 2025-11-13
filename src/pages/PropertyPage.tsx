@@ -143,40 +143,27 @@ const PropertyPage = () => {
         <section className="py-6 md:py-8 bg-background">
           <div className="container mx-auto px-4">
             <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                {/* Primary Image */}
-                {(() => {
-                  const imgs = parseImageUrls(property.Images);
-                  const primary = imgs.length > 0 ? imgs[0] : (property.image_url || null);
-                  const hasImage = primary && primary !== DEFAULT_IMAGES.property;
-                  return (
-                    <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                      {hasImage ? (
-                        <img
-                          src={primary as string}
-                          alt={`${property.Properties} - Main Image`}
-                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })()}
+              {(() => {
+                const imgs = parseImageUrls(property.Images).filter((i: string) => i && i !== DEFAULT_IMAGES.property);
+                const displayImages = imgs.length > 0 ? imgs : (property.image_url && property.image_url !== DEFAULT_IMAGES.property ? [property.image_url] : []);
                 
-                {/* Additional Images from JSON array */}
-                {parseImageUrls(property.Images).map((image: string, index: number) => (
-                  <div key={index} className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                    <img
-                      src={image}
-                      alt={`${property.Properties} - Image ${index + 1}`}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                      onError={(e) => {
-                        e.currentTarget.src = getImageUrl(null, 'property');
-                      }}
-                    />
+                return displayImages.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                    {displayImages.map((image: string, index: number) => (
+                      <div key={index} className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
+                        <img
+                          src={image}
+                          alt={`${property.Properties} - Image ${index + 1}`}
+                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                ) : null;
+              })()}
             </div>
           </div>
         </section>

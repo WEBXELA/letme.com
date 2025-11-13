@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { validateImage, resizeAndCompressImage, RECOMMENDED_DIMENSIONS } from "@/lib/imageUtils";
 import { Upload, Camera, Image as ImageIcon, Trash2 } from "lucide-react";
 
@@ -14,9 +14,17 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ value, onChange, ty
   const [dragActive, setDragActive] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
 
+  // Sync previews with value prop whenever it changes
+  useEffect(() => {
+    setPreviews((value || []).map((f) => URL.createObjectURL(f)));
+  }, [value]);
+
   const updateFiles = (files: File[]) => {
     onChange(files);
-    setPreviews(files.map((f) => URL.createObjectURL(f)));
+    // Reset file input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleFilesSelected = async (filesList: FileList | File[]) => {
