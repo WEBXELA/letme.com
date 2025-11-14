@@ -50,6 +50,7 @@ const AdminPage = () => {
     Properties: '',
     AreaID: '',
     AddressID: '',
+    AddressText: '',
     PlusCode: '',
     Images: '',
     Description: ''
@@ -147,6 +148,12 @@ const AdminPage = () => {
 
   // Image upload functions
   const uploadImage = async (file: File, bucket: string, folder: string): Promise<string> => {
+    // Verify user is authenticated before uploading
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('You must be logged in to upload images. Please refresh the page and try again.');
+    }
+
     const fileName = generateFileName(file.name, folder);
     const filePath = `${folder}/${fileName}`;
 
@@ -158,7 +165,16 @@ const AdminPage = () => {
       });
 
     if (error) {
-      throw new Error(`Failed to upload image: ${error.message}`);
+      console.error('Storage upload error:', error);
+      // Provide more detailed error message
+      if (error.statusCode === 403 || error.message?.includes('403')) {
+        throw new Error('Permission denied. Please check that storage policies are configured correctly in Supabase.');
+      }
+      throw new Error(`Failed to upload image: ${error.message || 'Unknown error'}`);
+    }
+
+    if (!data) {
+      throw new Error('Upload succeeded but no data returned');
     }
 
     const { data: { publicUrl } } = supabase.storage
@@ -168,13 +184,19 @@ const AdminPage = () => {
     return publicUrl;
   };
 
-  const uploadMultipleImages = async (files: File[], bucket: string, folder: string): Promise<string[]> => {
+  const uploadMultipleImages = async (files: File[], bucket: string, folder: string): Promise<{ urls: string[]; failed: { fileName: string; error: string }[] }> => {
     const urls: string[] = [];
+    const failed: { fileName: string; error: string }[] = [];
     for (const file of files) {
-      const url = await uploadImage(file, bucket, folder);
-      urls.push(url);
+      try {
+        const url = await uploadImage(file, bucket, folder);
+        urls.push(url);
+      } catch (err: any) {
+        failed.push({ fileName: file.name, error: err?.message || String(err) });
+        console.error('Failed to upload image', file.name, err);
+      }
     }
-    return urls;
+    return { urls, failed };
   };
 
   const handlePropertyImageSelect = (file: File) => {
@@ -324,10 +346,18 @@ const AdminPage = () => {
       });
       return;
     }
-    if (!propertyForm.AddressID.trim()) {
+    if (!propertyForm.Properties.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please select an address.",
+        description: "Please enter a property name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!propertyForm.AddressID.trim() && !propertyForm.AddressText.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide or select an address.",
         variant: "destructive",
       });
       return;
@@ -338,6 +368,12 @@ const AdminPage = () => {
         description: "Please enter a description for the property.",
         variant: "destructive",
       });
+      return;
+    }
+
+    // Enforce max 5 photos
+    if (propertyImagesFiles && propertyImagesFiles.length > 5) {
+      toast({ title: 'Validation Error', description: 'You can upload a maximum of 5 photos.', variant: 'destructive' });
       return;
     }
 
@@ -352,15 +388,84 @@ const AdminPage = () => {
 
       let additionalUrls: string[] = [];
       if (propertyImagesFiles && propertyImagesFiles.length > 0) {
-        additionalUrls = await uploadMultipleImages(propertyImagesFiles, 'property-images', 'properties');
+        const res = await uploadMultipleImages(propertyImagesFiles, 'property-images', 'properties');
+        additionalUrls = res.urls;
+        if (res.failed.length > 0) {
+          if (res.failed.length === propertyImagesFiles.length) {
+            // All images failed
+            toast({ 
+              title: 'Upload Warning', 
+              description: `All ${res.failed.length} photo(s) failed to upload. Property will be created without images.`, 
+              variant: 'destructive' 
+            });
+          } else {
+            // Some images failed
+            toast({ 
+              title: 'Upload Warning', 
+              description: `${res.failed.length} of ${propertyImagesFiles.length} photo(s) failed to upload.`, 
+              variant: 'destructive' 
+            });
+          }
+        }
+      }
+
+      // Resolve or create address record
+      let addressIdToUse: number | null = null;
+      if (propertyForm.AddressID) {
+        addressIdToUse = parseInt(propertyForm.AddressID);
+      } else if (propertyForm.AddressText && propertyForm.AddressText.trim()) {
+        const found = addresses.find(a => a.Address === propertyForm.AddressText.trim());
+        if (found) {
+          // some address rows use AddressId
+          addressIdToUse = (found as any).AddressId || (found as any).AddressID || null;
+        } else {
+          // insert new address
+          const { data: newAddr, error: addrErr } = await supabase
+            .from('addresses')
+            .insert([{ Address: propertyForm.AddressText.trim() }])
+            .select()
+            .single();
+          if (addrErr) {
+            console.error('Error inserting address:', addrErr);
+            // Provide more helpful error message for RLS violations
+            if (addrErr.code === '42501' || addrErr.message?.includes('row-level security')) {
+              throw new Error('Permission denied: Cannot create new address. Please run COMPLETE_RLS_FIX.sql in Supabase SQL Editor to fix RLS policies.');
+            }
+            throw new Error(`Failed to create address: ${addrErr.message || 'Unknown error'}`);
+          }
+          addressIdToUse = (newAddr as any).AddressId || (newAddr as any).AddressID || null;
+        }
+      }
+
+      if (!addressIdToUse) {
+        toast({ title: 'Validation Error', description: 'Please provide a valid address or select an existing one.', variant: 'destructive' });
+        setUploading(false);
+        return;
+      }
+
+      // Ensure Images is always a valid JSON array string or null
+      let imagesValue: string | null = null;
+      if (additionalUrls.length > 0) {
+        imagesValue = JSON.stringify(additionalUrls);
+      } else if (propertyForm.Images && propertyForm.Images.trim() !== '') {
+        // Validate that existing Images is valid JSON
+        try {
+          const parsed = JSON.parse(propertyForm.Images);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            imagesValue = propertyForm.Images;
+          }
+        } catch {
+          // Invalid JSON, set to null
+          imagesValue = null;
+        }
       }
 
       const propertyData: any = {
         Properties: propertyForm.Properties,
         AreaID: parseInt(propertyForm.AreaID),
-        AddressID: parseInt(propertyForm.AddressID),
-        PlusCode: propertyForm.PlusCode,
-        Images: additionalUrls.length > 0 ? JSON.stringify(additionalUrls) : propertyForm.Images,
+        AddressID: addressIdToUse,
+        PlusCode: propertyForm.PlusCode.trim() || '', // Ensure PlusCode is not null (empty string if not provided)
+        Images: imagesValue,
         Description: propertyForm.Description
       };
 
@@ -372,7 +477,10 @@ const AdminPage = () => {
         .from('Properties')
         .insert([propertyData]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database insert error:', error);
+        throw new Error(error.message || 'Failed to add property to database');
+      }
 
       toast({
         title: "Property Added",
@@ -384,6 +492,7 @@ const AdminPage = () => {
         Properties: '',
         AreaID: '',
         AddressID: '',
+        AddressText: '',
         PlusCode: '',
         Images: '',
         Description: ''
@@ -392,11 +501,26 @@ const AdminPage = () => {
       setPropertyImagePreview(null);
       setPropertyImagesFiles([]);
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding property:', error);
+      let errorMessage = "Failed to add property.";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      // Check for 403 errors specifically
+      if (errorMessage.includes('403') || errorMessage.includes('Permission denied') || errorMessage.includes('permission')) {
+        errorMessage = 'Storage permission error. Please run the fix-storage-403-error.sql script in your Supabase SQL Editor to fix storage policies.';
+      }
+      
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add property.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -439,11 +563,21 @@ const AdminPage = () => {
       return;
     }
 
+    // Enforce max 5 photos for unit
+    if (unitImagesFiles && unitImagesFiles.length > 5) {
+      toast({ title: 'Validation Error', description: 'You can upload a maximum of 5 photos for a unit.', variant: 'destructive' });
+      return;
+    }
+
     setUploading(true);
     
     try {
-      // Avoid saving placeholder as stored image
-      let imageUrl = (editingUnit.image_url && editingUnit.image_url !== DEFAULT_IMAGES.unit) ? editingUnit.image_url : null;
+      // For new units, imageUrl starts as null
+      // For editing, preserve existing image_url if it's not a placeholder
+      let imageUrl: string | null = null;
+      if (editingUnit && editingUnit.image_url && editingUnit.image_url !== DEFAULT_IMAGES.unit) {
+        imageUrl = editingUnit.image_url;
+      }
       
       if (unitImage) {
         imageUrl = await uploadImage(unitImage, 'unit-images', 'units');
@@ -451,7 +585,42 @@ const AdminPage = () => {
 
       let additionalUnitUrls: string[] = [];
       if (unitImagesFiles && unitImagesFiles.length > 0) {
-        additionalUnitUrls = await uploadMultipleImages(unitImagesFiles, 'unit-images', 'units');
+        const res = await uploadMultipleImages(unitImagesFiles, 'unit-images', 'units');
+        additionalUnitUrls = res.urls;
+        if (res.failed.length > 0) {
+          if (res.failed.length === unitImagesFiles.length) {
+            // All images failed
+            toast({ 
+              title: 'Upload Warning', 
+              description: `All ${res.failed.length} photo(s) failed to upload. Unit will be created without images.`, 
+              variant: 'destructive' 
+            });
+          } else {
+            // Some images failed
+            toast({ 
+              title: 'Upload Warning', 
+              description: `${res.failed.length} of ${unitImagesFiles.length} photo(s) failed to upload.`, 
+              variant: 'destructive' 
+            });
+          }
+        }
+      }
+
+      // Ensure Images is always a valid JSON array string or null
+      let imagesValue: string | null = null;
+      if (additionalUnitUrls.length > 0) {
+        imagesValue = JSON.stringify(additionalUnitUrls);
+      } else if (unitForm.Images && unitForm.Images.trim() !== '') {
+        // Validate that existing Images is valid JSON
+        try {
+          const parsed = JSON.parse(unitForm.Images);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            imagesValue = unitForm.Images;
+          }
+        } catch {
+          // Invalid JSON, set to null
+          imagesValue = null;
+        }
       }
 
       const unitData: any = {
@@ -459,7 +628,7 @@ const AdminPage = () => {
         UnitName: unitForm.UnitName,
         MonthlyPrice: parseFloat(unitForm.MonthlyPrice),
         Available: unitForm.Available,
-        Images: additionalUnitUrls.length > 0 ? JSON.stringify(additionalUnitUrls) : unitForm.Images,
+        Images: imagesValue,
         Description: unitForm.Description
       };
 
@@ -471,7 +640,10 @@ const AdminPage = () => {
         .from('Units')
         .insert([unitData]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database insert error:', error);
+        throw new Error(error.message || 'Failed to add unit to database');
+      }
 
       toast({
         title: "Unit Added",
@@ -491,11 +663,26 @@ const AdminPage = () => {
       setUnitImagePreview(null);
       setUnitImagesFiles([]);
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding unit:', error);
+      let errorMessage = "Failed to add unit.";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      // Check for 403 errors specifically
+      if (errorMessage.includes('403') || errorMessage.includes('Permission denied') || errorMessage.includes('permission')) {
+        errorMessage = 'Storage permission error. Please run the fix-storage-403-error.sql script in your Supabase SQL Editor to fix storage policies.';
+      }
+      
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add unit.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -585,6 +772,7 @@ const AdminPage = () => {
       Properties: property.Properties || '',
       AreaID: property.AreaID.toString(),
       AddressID: property.AddressID.toString(),
+      AddressText: property.addresses?.Address || '',
       PlusCode: property.PlusCode || '',
       Images: property.Images || '',
       Description: property.Description || ''
@@ -612,6 +800,16 @@ const AdminPage = () => {
     e.preventDefault();
     if (!editingProperty) return;
 
+    // Validation
+    if (!propertyForm.Properties.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a property name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploading(true);
     try {
       // Avoid treating the default placeholder as a real stored image
@@ -635,22 +833,65 @@ const AdminPage = () => {
         imageUrl = publicUrl;
       }
 
+      // Filter out deleted images from existing ones
+      const remainingExistingImages = existingPropertyImages.filter(img => !propertyImagesToDelete.has(img));
+
+      // Enforce max 5 photos total (existing + new)
+      if ((remainingExistingImages.length + (propertyImagesFiles ? propertyImagesFiles.length : 0)) > 5) {
+        toast({ title: 'Validation Error', description: 'Total photos cannot exceed 5. Remove some existing photos or reduce new uploads.', variant: 'destructive' });
+        setUploading(false);
+        return;
+      }
+
       // Upload additional images if provided
       let additionalUrls: string[] = [];
       if (propertyImagesFiles && propertyImagesFiles.length > 0) {
-        additionalUrls = await uploadMultipleImages(propertyImagesFiles, 'property-images', 'properties');
+        const res = await uploadMultipleImages(propertyImagesFiles, 'property-images', 'properties');
+        additionalUrls = res.urls;
+        if (res.failed.length > 0) {
+          toast({ title: 'Upload Warning', description: `${res.failed.length} photo(s) failed to upload.`, variant: 'destructive' });
+        }
       }
-
-      // Filter out deleted images from existing ones
-      const remainingExistingImages = existingPropertyImages.filter(img => !propertyImagesToDelete.has(img));
       
       // Combine remaining existing images with newly uploaded ones
       const allImages = [...remainingExistingImages, ...additionalUrls];
 
+      // Resolve or create address record for update
+      let addressIdToUse: number | null = null;
+      if (propertyForm.AddressID) {
+        addressIdToUse = parseInt(propertyForm.AddressID);
+      } else if (propertyForm.AddressText && propertyForm.AddressText.trim()) {
+        const found = addresses.find(a => a.Address === propertyForm.AddressText.trim());
+        if (found) {
+          addressIdToUse = (found as any).AddressId || (found as any).AddressID || null;
+        } else {
+          const { data: newAddr, error: addrErr } = await supabase
+            .from('addresses')
+            .insert([{ Address: propertyForm.AddressText.trim() }])
+            .select()
+            .single();
+          if (addrErr) {
+            console.error('Error inserting address:', addrErr);
+            // Provide more helpful error message for RLS violations
+            if (addrErr.code === '42501' || addrErr.message?.includes('row-level security')) {
+              throw new Error('Permission denied: Cannot create new address. Please run COMPLETE_RLS_FIX.sql in Supabase SQL Editor to fix RLS policies.');
+            }
+            throw new Error(`Failed to create address: ${addrErr.message || 'Unknown error'}`);
+          }
+          addressIdToUse = (newAddr as any).AddressId || (newAddr as any).AddressID || null;
+        }
+      }
+
+      if (!addressIdToUse) {
+        toast({ title: 'Validation Error', description: 'Please provide a valid address or select an existing one.', variant: 'destructive' });
+        setUploading(false);
+        return;
+      }
+
       const updateData: any = {
         Properties: propertyForm.Properties,
         AreaID: parseInt(propertyForm.AreaID),
-        AddressID: parseInt(propertyForm.AddressID),
+        AddressID: addressIdToUse,
         PlusCode: propertyForm.PlusCode,
         Images: allImages.length > 0 ? JSON.stringify(allImages) : '',
         Description: propertyForm.Description
@@ -675,6 +916,7 @@ const AdminPage = () => {
         Properties: '',
         AreaID: '',
         AddressID: '',
+        AddressText: '',
         PlusCode: '',
         Images: '',
         Description: ''
@@ -756,14 +998,25 @@ const AdminPage = () => {
         imageUrl = publicUrl;
       }
 
+      // Filter out deleted images from existing ones
+      const remainingExistingImages = existingUnitImages.filter(img => !unitImagesToDelete.has(img));
+
+      // Enforce max 5 photos total for unit (existing + new)
+      if ((remainingExistingImages.length + (unitImagesFiles ? unitImagesFiles.length : 0)) > 5) {
+        toast({ title: 'Validation Error', description: 'Total unit photos cannot exceed 5. Remove some existing photos or reduce new uploads.', variant: 'destructive' });
+        setUploading(false);
+        return;
+      }
+
       // Upload additional images if provided
       let additionalUnitUrls: string[] = [];
       if (unitImagesFiles && unitImagesFiles.length > 0) {
-        additionalUnitUrls = await uploadMultipleImages(unitImagesFiles, 'unit-images', 'units');
+        const res = await uploadMultipleImages(unitImagesFiles, 'unit-images', 'units');
+        additionalUnitUrls = res.urls;
+        if (res.failed.length > 0) {
+          toast({ title: 'Upload Warning', description: `${res.failed.length} photo(s) failed to upload.`, variant: 'destructive' });
+        }
       }
-
-      // Filter out deleted images from existing ones
-      const remainingExistingImages = existingUnitImages.filter(img => !unitImagesToDelete.has(img));
       
       // Combine remaining existing images with newly uploaded ones
       const allImages = [...remainingExistingImages, ...additionalUnitUrls];
@@ -893,21 +1146,21 @@ const AdminPage = () => {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-50">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Letme Properties list admin page</h1>
+      <header className="bg-white border-b border-gray-200 px-3 sm:px-4 py-3 sticky top-0 z-50">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 truncate flex-1">Letme Properties list admin page</h1>
           <Button 
             variant="outline" 
             onClick={handleLogout} 
-            className="text-sm px-3 py-1"
+            className="text-xs sm:text-sm px-2 sm:px-3 py-1 flex-shrink-0"
           >
-            <LogOut className="h-4 w-4 mr-1" />
-            Logout
+            <LogOut className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+            <span className="hidden sm:inline">Logout</span>
           </Button>
         </div>
       </header>
 
-      <main className="px-4 py-6">
+      <main className="px-3 sm:px-4 py-4 sm:py-6">
         {/* Loading State */}
         {dataLoading && (
           <div className="text-center py-12">
@@ -941,45 +1194,58 @@ const AdminPage = () => {
                 const isExpanded = expandedProperties.has(property.PropertyID);
                 return (
                   <div key={property.PropertyID} className="bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between p-3">
-                      <div className="flex-1">
-                        <p className="text-gray-900 font-medium">
-                          {property.addresses?.Address || property.Properties || `Property ${property.PropertyID}`}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-900 font-medium text-sm sm:text-base truncate">
+                          {property.Properties || property.addresses?.Address || `Property ${property.PropertyID}`}
                         </p>
-                        <p className="text-sm text-muted-foreground">{unitsForProperty.length} units</p>
+                        {property.Properties && property.addresses?.Address && (
+                          <p className="text-xs sm:text-sm text-muted-foreground truncate mt-1">{property.addresses.Address}</p>
+                        )}
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-1">{unitsForProperty.length} units</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => {
-                          const next = new Set(expandedProperties);
-                          if (next.has(property.PropertyID)) next.delete(property.PropertyID); else next.add(property.PropertyID);
-                          setExpandedProperties(next);
-                        }}>
-                          {isExpanded ? 'Hide units' : 'Show units'}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => {
+                            const next = new Set(expandedProperties);
+                            if (next.has(property.PropertyID)) next.delete(property.PropertyID); else next.add(property.PropertyID);
+                            setExpandedProperties(next);
+                          }}
+                          className="text-xs sm:text-sm px-2 sm:px-3 py-1 h-8"
+                        >
+                          <span className="hidden sm:inline">{isExpanded ? 'Hide units' : 'Show units'}</span>
+                          <span className="sm:hidden">{isExpanded ? 'Hide' : 'Show'}</span>
                         </Button>
                         <Button 
                           variant="outline" 
                           size="sm" 
                           onClick={() => handleEditProperty(property)}
-                          className="px-3 py-1 text-sm"
+                          className="px-2 sm:px-3 py-1 text-xs sm:text-sm h-8"
                         >
                           Edit
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm" className="px-3 py-1 text-sm text-red-600 border-red-200 hover:bg-red-50">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="px-2 sm:px-3 py-1 text-xs sm:text-sm text-red-600 border-red-200 hover:bg-red-50 h-8"
+                            >
                               Delete
                             </Button>
                           </AlertDialogTrigger>
-                          <AlertDialogContent>
+                          <AlertDialogContent className="mx-4 max-w-[calc(100vw-2rem)]">
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure you want to delete this property?</AlertDialogTitle>
-                              <AlertDialogDescription>
+                              <AlertDialogTitle className="text-base sm:text-lg">Are you sure you want to delete this property?</AlertDialogTitle>
+                              <AlertDialogDescription className="text-sm">
                                 If this property has related units, deletion will fail. You can choose to delete the property along with all its units in the next step.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => confirmDeleteProperty(property)}>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => confirmDeleteProperty(property)} className="w-full sm:w-auto">
                                 Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -989,29 +1255,44 @@ const AdminPage = () => {
                     </div>
 
                     {isExpanded && (
-                      <div className="border-t px-4 py-3">
+                      <div className="border-t px-3 sm:px-4 py-3">
                         {unitsForProperty.length > 0 ? (
                           <div className="space-y-2">
                             {unitsForProperty.map(u => (
-                              <div key={u.UnitID} className="flex items-center justify-between bg-white rounded p-2">
-                                <div>
-                                  <p className="font-medium">{u.UnitName}</p>
-                                  <p className="text-sm text-muted-foreground">£{u.MonthlyPrice} pcm</p>
+                              <div key={u.UnitID} className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-white rounded p-2 gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm sm:text-base truncate">{u.UnitName}</p>
+                                  <p className="text-xs sm:text-sm text-muted-foreground">£{u.MonthlyPrice} pcm</p>
                                 </div>
                                 <div className="flex gap-2">
-                                  <Button size="sm" variant="ghost" onClick={() => handleEditUnit(u)}>Edit</Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    onClick={() => handleEditUnit(u)}
+                                    className="text-xs sm:text-sm px-2 sm:px-3 h-8"
+                                  >
+                                    Edit
+                                  </Button>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                      <Button size="sm" variant="ghost" className="text-red-600">Delete</Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="text-red-600 text-xs sm:text-sm px-2 sm:px-3 h-8"
+                                      >
+                                        Delete
+                                      </Button>
                                     </AlertDialogTrigger>
-                                    <AlertDialogContent>
+                                    <AlertDialogContent className="mx-4 max-w-[calc(100vw-2rem)]">
                                       <AlertDialogHeader>
-                                        <AlertDialogTitle>Confirm Delete</AlertDialogTitle>
-                                        <AlertDialogDescription>Are you sure you want to delete this unit?</AlertDialogDescription>
+                                        <AlertDialogTitle className="text-base sm:text-lg">Confirm Delete</AlertDialogTitle>
+                                        <AlertDialogDescription className="text-sm">Are you sure you want to delete this unit?</AlertDialogDescription>
                                       </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDeleteUnit(u.UnitID)}>Delete</AlertDialogAction>
+                                      <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                                        <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteUnit(u.UnitID)} className="w-full sm:w-auto">
+                                          Delete
+                                        </AlertDialogAction>
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
@@ -1020,7 +1301,7 @@ const AdminPage = () => {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm text-muted-foreground">No units for this property.</p>
+                          <p className="text-xs sm:text-sm text-muted-foreground">No units for this property.</p>
                         )}
                       </div>
                     )}
@@ -1033,15 +1314,32 @@ const AdminPage = () => {
             <div className="space-y-3">
               <Dialog open={showPropertyDialog} onOpenChange={setShowPropertyDialog}>
                 <DialogTrigger asChild>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 text-base font-medium">
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 sm:py-3 text-sm sm:text-base font-medium"
+                    onClick={() => {
+                      // reset property form for a fresh add
+                      setPropertyForm({
+                        Properties: '',
+                        AreaID: '',
+                        AddressID: '',
+                        AddressText: '',
+                        PlusCode: '',
+                        Images: '',
+                        Description: ''
+                      });
+                      setPropertyImagesFiles([]);
+                      setPropertyImage(null);
+                      setPropertyImagePreview(null);
+                    }}
+                  >
                     + Add New Property
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto mx-2 sm:mx-auto">
                   <DialogHeader>
-                    <DialogTitle className="text-lg font-semibold">Add a new property</DialogTitle>
+                    <DialogTitle className="text-base sm:text-lg font-semibold">Add a new property</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4 pr-2">
+                  <div className="space-y-4 pr-1 sm:pr-2">
                     {/* Area Selection */}
                     <div className="space-y-3">
                       <Label className="text-sm font-medium text-gray-700">Area <span className="text-red-500">*</span></Label>
@@ -1065,18 +1363,26 @@ const AdminPage = () => {
                       </div>
                     </div>
 
+                    {/* Property Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="propertyName" className="text-sm font-medium text-gray-700">Property Name <span className="text-red-500">*</span></Label>
+                      <Input
+                        id="propertyName"
+                        value={propertyForm.Properties}
+                        onChange={(e) => setPropertyForm(prev => ({ ...prev, Properties: e.target.value }))}
+                        placeholder="e.g., St John's Court, Marina Apartments"
+                        className="bg-gray-50 border-gray-200"
+                        required
+                      />
+                    </div>
+
                     {/* Address */}
                     <div className="space-y-2">
                       <Label htmlFor="address" className="text-sm font-medium text-gray-700">Address <span className="text-red-500">*</span></Label>
                       <Input
                         id="address"
-                        value={propertyForm.AddressID ? addresses.find(a => a.AddressId.toString() === propertyForm.AddressID)?.Address || '' : ''}
-                        onChange={(e) => {
-                          const address = addresses.find(a => a.Address === e.target.value);
-                          if (address) {
-                            setPropertyForm(prev => ({ ...prev, AddressID: address.AddressId.toString() }));
-                          }
-                        }}
+                        value={propertyForm.AddressText}
+                        onChange={(e) => setPropertyForm(prev => ({ ...prev, AddressText: e.target.value, AddressID: '' }))}
                         placeholder=""
                         className="bg-gray-50 border-gray-200"
                       />
@@ -1118,11 +1424,11 @@ const AdminPage = () => {
                       />
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-4 border-t">
-                      <Button variant="outline" onClick={() => setShowPropertyDialog(false)} disabled={uploading}>
+                    <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+                      <Button variant="outline" onClick={() => setShowPropertyDialog(false)} disabled={uploading} className="w-full sm:w-auto">
                         Cancel
                       </Button>
-                      <Button onClick={handleAddProperty} disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium">
+                      <Button onClick={handleAddProperty} disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium w-full sm:w-auto">
                         {uploading ? "Saving..." : "Save this Property"}
                       </Button>
                     </div>
@@ -1132,15 +1438,32 @@ const AdminPage = () => {
 
               <Dialog open={showUnitDialog} onOpenChange={setShowUnitDialog}>
                 <DialogTrigger asChild>
-                  <Button className="w-full bg-green-600 hover:bg-green-700 text-white py-3 text-base font-medium">
+                  <Button 
+                    className="w-full bg-green-600 hover:bg-green-700 text-white py-2 sm:py-3 text-sm sm:text-base font-medium"
+                    onClick={() => {
+                      // Reset unit form for a fresh add
+                      setUnitForm({
+                        PropertyID: '',
+                        UnitName: '',
+                        MonthlyPrice: '',
+                        Available: true,
+                        Images: '',
+                        Description: ''
+                      });
+                      setUnitImagesFiles([]);
+                      setUnitImage(null);
+                      setUnitImagePreview(null);
+                      setEditingUnit(null);
+                    }}
+                  >
                     + Add New Unit
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto mx-2 sm:mx-auto">
                   <DialogHeader>
-                    <DialogTitle className="text-lg font-semibold">Add a new unit</DialogTitle>
+                    <DialogTitle className="text-base sm:text-lg font-semibold">Add a new unit</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4 pr-2">
+                  <div className="space-y-4 pr-1 sm:pr-2">
                     {/* Unit Name */}
                     <div className="space-y-2">
                       <Label htmlFor="unitName" className="text-sm font-medium text-gray-700">Unit name <span className="text-red-500">*</span></Label>
@@ -1239,11 +1562,11 @@ const AdminPage = () => {
                       />
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-4 border-t">
-                      <Button variant="outline" onClick={() => setShowUnitDialog(false)} disabled={uploading}>
+                    <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+                      <Button variant="outline" onClick={() => setShowUnitDialog(false)} disabled={uploading} className="w-full sm:w-auto">
                         Cancel
                       </Button>
-                      <Button onClick={handleAddUnit} disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium">
+                      <Button onClick={handleAddUnit} disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium w-full sm:w-auto">
                         {uploading ? "Saving..." : "Save this Unit"}
                       </Button>
                     </div>
@@ -1257,11 +1580,11 @@ const AdminPage = () => {
 
       {/* Edit Property Dialog */}
       <Dialog open={showEditPropertyDialog} onOpenChange={setShowEditPropertyDialog}>
-        <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto mx-2 sm:mx-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Edit Property</DialogTitle>
+            <DialogTitle className="text-base sm:text-lg font-semibold">Edit Property</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleUpdateProperty} className="space-y-4 pr-2">
+          <form onSubmit={handleUpdateProperty} className="space-y-4 pr-1 sm:pr-2">
             {/* Area Selection */}
             <div className="space-y-3">
               <Label className="text-sm font-medium text-gray-700">Area <span className="text-red-500">*</span></Label>
@@ -1285,18 +1608,26 @@ const AdminPage = () => {
               </div>
             </div>
 
+            {/* Property Name */}
+            <div className="space-y-2">
+              <Label htmlFor="editPropertyName" className="text-sm font-medium text-gray-700">Property Name <span className="text-red-500">*</span></Label>
+              <Input
+                id="editPropertyName"
+                value={propertyForm.Properties}
+                onChange={(e) => setPropertyForm(prev => ({ ...prev, Properties: e.target.value }))}
+                placeholder="e.g., St John's Court, Marina Apartments"
+                className="bg-gray-50 border-gray-200"
+                required
+              />
+            </div>
+
             {/* Address */}
             <div className="space-y-2">
               <Label htmlFor="editAddress" className="text-sm font-medium text-gray-700">Address <span className="text-red-500">*</span></Label>
               <Input
                 id="editAddress"
-                value={propertyForm.AddressID ? addresses.find(a => a.AddressId.toString() === propertyForm.AddressID)?.Address || '' : ''}
-                onChange={(e) => {
-                  const address = addresses.find(a => a.Address === e.target.value);
-                  if (address) {
-                    setPropertyForm(prev => ({ ...prev, AddressID: address.AddressId.toString() }));
-                  }
-                }}
+                value={propertyForm.AddressText}
+                onChange={(e) => setPropertyForm(prev => ({ ...prev, AddressText: e.target.value, AddressID: '' }))}
                 placeholder=""
                 className="bg-gray-50 border-gray-200"
                 required
@@ -1332,7 +1663,7 @@ const AdminPage = () => {
             {existingPropertyImages.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">Existing Photos ({existingPropertyImages.length})</Label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {existingPropertyImages.map((imageUrl, index) => (
                     <div 
                       key={index} 
@@ -1384,11 +1715,11 @@ const AdminPage = () => {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setShowEditPropertyDialog(false)} disabled={uploading}>
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowEditPropertyDialog(false)} disabled={uploading} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium">
+              <Button type="submit" disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium w-full sm:w-auto">
                 {uploading ? "Updating..." : "Update Property"}
               </Button>
             </div>
@@ -1398,11 +1729,11 @@ const AdminPage = () => {
 
       {/* Edit Unit Dialog */}
       <Dialog open={showEditUnitDialog} onOpenChange={setShowEditUnitDialog}>
-        <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto mx-2 sm:mx-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Edit Unit</DialogTitle>
+            <DialogTitle className="text-base sm:text-lg font-semibold">Edit Unit</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleUpdateUnit} className="space-y-4 pr-2">
+          <form onSubmit={handleUpdateUnit} className="space-y-4 pr-1 sm:pr-2">
             {/* Unit Name */}
             <div className="space-y-2">
               <Label htmlFor="editUnitName" className="text-sm font-medium text-gray-700">Unit name <span className="text-red-500">*</span></Label>
@@ -1496,7 +1827,7 @@ const AdminPage = () => {
             {existingUnitImages.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">Existing Photos ({existingUnitImages.length})</Label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {existingUnitImages.map((imageUrl, index) => (
                     <div 
                       key={index} 
@@ -1548,11 +1879,11 @@ const AdminPage = () => {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setShowEditUnitDialog(false)} disabled={uploading}>
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowEditUnitDialog(false)} disabled={uploading} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium">
+              <Button type="submit" disabled={uploading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium w-full sm:w-auto">
                 {uploading ? "Updating..." : "Update Unit"}
               </Button>
             </div>
@@ -1562,20 +1893,20 @@ const AdminPage = () => {
 
       {/* Cascade Delete Confirmation */}
       <AlertDialog open={cascadeConfirm.open} onOpenChange={(open) => setCascadeConfirm(prev => ({ ...prev, open }))}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Property and All Units?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This property has {cascadeConfirm.unitsCount} related units. Deleting the property will also delete all {cascadeConfirm.unitsCount} units. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => cascadeConfirm.property && handleCascadeDeleteProperty(cascadeConfirm.property)}>
-              Delete All
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+                          <AlertDialogContent className="mx-4 max-w-[calc(100vw-2rem)]">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="text-base sm:text-lg">Delete Property and All Units?</AlertDialogTitle>
+                              <AlertDialogDescription className="text-sm">
+                                This property has {cascadeConfirm.unitsCount} related units. Deleting the property will also delete all {cascadeConfirm.unitsCount} units. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => cascadeConfirm.property && handleCascadeDeleteProperty(cascadeConfirm.property)} className="w-full sm:w-auto">
+                                Delete All
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
       </AlertDialog>
     </div>
   );

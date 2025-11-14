@@ -40,7 +40,13 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ value, onChange, ty
       );
       processed.push(compressed);
     }
-    updateFiles([...(value || []), ...processed]);
+    // Enforce max 5 files total
+    const combined = [...(value || []), ...processed];
+    const limited = combined.slice(0, 5);
+    if (combined.length > 5) {
+      console.warn('MultiImageUpload: maximum 5 images allowed; extra images were ignored.');
+    }
+    updateFiles(limited);
   };
 
   const handleRemove = (index: number) => {

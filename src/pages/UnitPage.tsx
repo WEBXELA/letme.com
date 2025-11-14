@@ -168,42 +168,92 @@ const UnitPage = () => {
           </div>
         </div>
 
-        {/* Unit Images */}
+        {/* Unit Images - Card Layout with Header, Main Image and Thumbnails */}
         <section className="py-6 md:py-8 bg-background">
           <div className="container mx-auto px-4">
             <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                {/* Primary Image */}
-                {(() => {
-                  const imgs = parseImageUrls(unit.Images);
-                  const primary = imgs.length > 0 ? imgs[0] : (unit.image_url || null);
-                  const hasImage = primary && primary !== DEFAULT_IMAGES.unit;
-                  return (
-                    <div className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                      {hasImage ? (
-                        <img
-                          src={primary as string}
-                          alt={`${unit.UnitName} - Main Image`}
-                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })()}
+              <Card className="shadow-medium border-none overflow-hidden">
+                <CardContent className="p-0">
+                  {(() => {
+                    // Parse all images from JSON array
+                    const allImages = parseImageUrls(unit.Images);
+                    
+                    // Combine all images: first from array, then image_url if not in array, then remaining from array
+                    let combinedImages: string[] = [];
+                    if (allImages.length > 0) {
+                      combinedImages = [...allImages];
+                    } else if (unit.image_url) {
+                      combinedImages = [unit.image_url];
+                    }
+                    
+                    // Remove duplicates and filter out default/placeholder images
+                    const uniqueImages = combinedImages.filter((img, index, self) => 
+                      img && 
+                      img !== DEFAULT_IMAGES.unit && 
+                      self.indexOf(img) === index
+                    );
+                    
+                    // Get primary image (first one)
+                    const primaryImage = uniqueImages.length > 0 
+                      ? uniqueImages[0] 
+                      : getImageUrl(null, 'unit');
+                    
+                    // Get thumbnail images (remaining images, max 5)
+                    const thumbnailImages = uniqueImages.length > 1 
+                      ? uniqueImages.slice(1, 6) 
+                      : [];
 
-                {/* Additional Images from JSON array */}
-                {parseImageUrls(unit.Images).map((image: string, index: number) => (
-                  <div key={index} className="relative h-44 md:h-64 overflow-hidden rounded-lg shadow-medium">
-                    <img
-                      src={image}
-                      alt={`${unit.UnitName} - Image ${index + 1}`}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                      onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
-                    />
-                  </div>
-                ))}
-              </div>
+                    return (
+                      <>
+                        {/* Header Bar - Dark grey with unit name and address */}
+                        <div className="bg-gray-800 text-white px-4 py-3 md:px-6 md:py-4">
+                          <h2 className="text-base md:text-lg font-bold">
+                            {unit.UnitName}
+                            {property.addresses?.Address && (
+                              <span className="font-normal text-gray-300">, {property.addresses.Address}</span>
+                            )}
+                          </h2>
+                        </div>
+
+                        {/* Main Large Image */}
+                        <div className="relative w-full h-64 sm:h-80 md:h-96 lg:h-[500px] overflow-hidden bg-gray-100">
+                          <img
+                            src={primaryImage as string}
+                            alt={`${unit.UnitName} - Main Image`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                          />
+                        </div>
+
+                        {/* Thumbnail Gallery Row - Show up to 5 thumbnails (only if more than 1 image exists) */}
+                        {thumbnailImages.length > 0 && (
+                          <div className="grid grid-cols-5 gap-2 md:gap-3 p-2 md:p-3 bg-gray-50">
+                            {thumbnailImages.map((image: string, index: number) => (
+                              <div 
+                                key={`thumb-${index}-${image}`}
+                                className="relative aspect-square overflow-hidden rounded-md cursor-pointer hover:opacity-80 transition-opacity group"
+                                onClick={() => {
+                                  // Click to view larger image in new tab
+                                  window.open(image, '_blank');
+                                }}
+                              >
+                                <img
+                                  src={image}
+                                  alt={`${unit.UnitName} - Thumbnail ${index + 2}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.currentTarget.src = getImageUrl(null, 'unit'); }}
+                                  loading="lazy"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
             </div>
           </div>
         </section>
