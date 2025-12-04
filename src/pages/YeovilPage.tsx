@@ -32,7 +32,8 @@ const YeovilPage = () => {
         } else {
           const computed = (data || []).map((p: any) => {
             const units: Unit[] = (p.units || []) as Unit[];
-            const availableUnits = units.filter(u => u.Available);
+            // Handle different boolean representations
+            const availableUnits = units.filter(u => u.Available === true || u.Available === 1 || u.Available === '1' || u.Available === 'true');
             const availableCount = availableUnits.length;
             const prices = availableUnits.map(u => u.MonthlyPrice);
             const minPrice = prices.length ? Math.min(...prices) : undefined;
@@ -99,15 +100,17 @@ const YeovilPage = () => {
                     Available Properties
                   </h2>
                   <p className="text-muted-foreground text-sm md:text-lg">
-                    {properties.length} properties available in Yeovil
+                    {properties.reduce((sum, p) => sum + (p.availableCount || 0), 0)} available units in Yeovil
                   </p>
                 </div>
 
                 {properties.length > 0 ? (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-                    {properties.map((property) => (
-                      <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
-                        <Card className="overflow-hidden shadow-medium border-none hover-outline cursor-pointer">
+                    {properties.map((property) => {
+                      const hasUnits = (property.availableCount || 0) > 0;
+
+                      const cardContent = (
+                        <Card className={`overflow-hidden shadow-medium border-none ${hasUnits ? 'hover-outline cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
                           <div className="p-4 md:hidden">
                             <h3 className="font-heading text-lg font-bold text-foreground mb-1">
                               {property.Properties || `Property ${property.PropertyID}`}
@@ -128,11 +131,18 @@ const YeovilPage = () => {
                                 <img
                                   src={primary as string}
                                   alt={property.Properties || 'Property'}
-                                  className="w-full h-full object-cover"
+                                  className={`w-full h-full object-cover ${!hasUnits ? 'grayscale' : ''}`}
                                   onError={(e) => { e.currentTarget.src = getImageUrl(null, 'property'); }}
                                 />
                               ) : null;
                             })()}
+                            
+                            {/* No Units Available Overlay */}
+                            {!hasUnits && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                <h3 className="text-white text-2xl md:text-4xl font-bold">No Units Available</h3>
+                              </div>
+                            )}
 
                             {/* Additional Images Overlay */}
                             {parseImageUrls(property.Images).length > 0 && (
@@ -199,8 +209,18 @@ const YeovilPage = () => {
                             </div>
                           </CardContent>
                         </Card>
-                      </Link>
-                    ))}
+                      );
+
+                      return hasUnits ? (
+                        <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
+                          {cardContent}
+                        </Link>
+                      ) : (
+                        <div key={property.PropertyID}>
+                          {cardContent}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12">

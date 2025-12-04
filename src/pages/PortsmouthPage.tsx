@@ -31,7 +31,8 @@ const PortsmouthPage = () => {
         } else {
           const computed = (data || []).map((p: any) => {
             const units: Unit[] = (p.units || []) as Unit[];
-            const availableUnits = units.filter(u => u.Available);
+            // Handle different boolean representations
+            const availableUnits = units.filter(u => u.Available === true || u.Available === 1 || u.Available === '1' || u.Available === 'true');
             const availableCount = availableUnits.length;
             const prices = availableUnits.map(u => u.MonthlyPrice);
             const minPrice = prices.length ? Math.min(...prices) : undefined;
@@ -91,28 +92,37 @@ const PortsmouthPage = () => {
                   <h2 className="font-heading text-3xl md:text-4xl font-bold mb-4">
                     Available Properties
                   </h2>
-                  <p className="text-muted-foreground text-lg">
-                    {properties.length} properties available in Portsmouth
+                  <p className="text-muted-foreground text-sm md:text-lg">
+                    {properties.reduce((sum, p) => sum + (p.availableCount || 0), 0)} available units in Portsmouth
                   </p>
                 </div>
 
                 {properties.length > 0 ? (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-                    {properties.map((property) => (
-                      <Card 
-                        key={property.PropertyID} 
-                        className="overflow-hidden shadow-medium hover:shadow-large transition-all duration-300 hover:scale-105 border-none"
-                      >
-                        <div className="relative h-64 overflow-hidden">
-                          {/* Primary Image */}
-                          <img
-                            src={getImageUrl(property.image_url, 'property')}
-                            alt={property.Properties || 'Property'}
-                            className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                            onError={(e) => {
-                              e.currentTarget.src = getImageUrl(null, 'property');
-                            }}
-                          />
+                    {properties.map((property) => {
+                      const hasUnits = (property.availableCount || 0) > 0;
+
+                      const cardContent = (
+                        <Card 
+                          className={`overflow-hidden shadow-medium border-none ${hasUnits ? 'hover:shadow-large transition-all duration-300 hover:scale-105 cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+                        >
+                          <div className="relative h-64 overflow-hidden">
+                            {/* Primary Image */}
+                            <img
+                              src={getImageUrl(property.image_url, 'property')}
+                              alt={property.Properties || 'Property'}
+                              className={`w-full h-full object-cover ${hasUnits ? 'transition-transform duration-300 hover:scale-110' : 'grayscale'}`}
+                              onError={(e) => {
+                                e.currentTarget.src = getImageUrl(null, 'property');
+                              }}
+                            />
+                            
+                            {/* No Units Available Overlay */}
+                            {!hasUnits && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                <h3 className="text-white text-2xl md:text-4xl font-bold">No Units Available</h3>
+                              </div>
+                            )}
                           
                           {/* Additional Images Overlay */}
                           {property.Images && JSON.parse(property.Images).length > 0 && (
@@ -195,7 +205,18 @@ const PortsmouthPage = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    ))}
+                      );
+
+                      return hasUnits ? (
+                        <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
+                          {cardContent}
+                        </Link>
+                      ) : (
+                        <div key={property.PropertyID}>
+                          {cardContent}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12">

@@ -42,13 +42,16 @@ const PropertyPage = () => {
         const { data: unitsData, error: unitsError } = await supabase
           .from('Units')
           .select('*')
-          .eq('PropertyID', propertyId)
-          .eq('Available', true);
+          .eq('PropertyID', propertyId);
 
         if (unitsError) {
           console.error('Error fetching units:', unitsError);
         } else {
-          setUnits(unitsData || []);
+          // Filter available units on client side to handle different boolean representations
+          const availableUnits = (unitsData || []).filter(u => 
+            u.Available === true || u.Available === 1 || u.Available === '1' || u.Available === 'true'
+          );
+          setUnits(availableUnits);
         }
       } catch (error) {
         console.error('Error:', error);

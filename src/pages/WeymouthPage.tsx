@@ -32,7 +32,8 @@ const WeymouthPage = () => {
         } else {
           const computed = (data || []).map((p: any) => {
             const units: Unit[] = (p.units || []) as Unit[];
-            const availableUnits = units.filter(u => u.Available);
+            // Handle different boolean representations
+            const availableUnits = units.filter(u => u.Available === true || u.Available === 1 || u.Available === '1' || u.Available === 'true');
             const availableCount = availableUnits.length;
             const prices = availableUnits.map(u => u.MonthlyPrice);
             const minPrice = prices.length ? Math.min(...prices) : undefined;
@@ -99,7 +100,7 @@ const WeymouthPage = () => {
                     Available Properties
                   </h2>
                   <p className="text-muted-foreground text-sm md:text-lg">
-                    {properties.length} properties available in Weymouth
+                    {properties.reduce((sum, p) => sum + (p.availableCount || 0), 0)} available units in Weymouth
                   </p>
                 </div>
 
@@ -111,10 +112,10 @@ const WeymouthPage = () => {
                       const primaryImage = property.image_url && property.image_url !== DEFAULT_IMAGES.property
                         ? property.image_url
                         : (imgs[0] ?? null);
+                      const hasUnits = (property.availableCount || 0) > 0;
 
-                      return (
-                        <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
-                          <Card className="overflow-hidden shadow-medium border-none hover-outline cursor-pointer">
+                      const cardContent = (
+                          <Card className={`overflow-hidden shadow-medium border-none ${hasUnits ? 'hover-outline cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
                             <div className="p-4 md:hidden">
                               <h3 className="font-heading text-lg font-bold text-foreground mb-1">
                                 {property.Properties || `Property ${property.PropertyID}`}
@@ -131,11 +132,18 @@ const WeymouthPage = () => {
                                 <img
                                   src={getImageUrl(primaryImage, 'property')}
                                   alt={property.Properties || 'Property'}
-                                  className="w-full h-full object-cover"
+                                  className={`w-full h-full object-cover ${!hasUnits ? 'grayscale' : ''}`}
                                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                 />
                               ) : (
                                 <div className="w-full h-full bg-gray-100" />
+                              )}
+                              
+                              {/* No Units Available Overlay */}
+                              {!hasUnits && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                  <h3 className="text-white text-2xl md:text-4xl font-bold">No Units Available</h3>
+                                </div>
                               )}
 
                               {/* Additional Images Overlay */}
@@ -203,7 +211,16 @@ const WeymouthPage = () => {
                               </div>
                             </CardContent>
                           </Card>
+                      );
+
+                      return hasUnits ? (
+                        <Link key={property.PropertyID} to={`/property/${property.PropertyID}`} className="block">
+                          {cardContent}
                         </Link>
+                      ) : (
+                        <div key={property.PropertyID}>
+                          {cardContent}
+                        </div>
                       );
                     })}
                   </div>
