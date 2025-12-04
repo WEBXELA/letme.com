@@ -9,16 +9,9 @@ const ContactPage = () => {
     {
       icon: Mail,
       title: "Email",
-      details: "info@letme.com",
+      details: "office@letme.com",
       description: "Send us an email anytime",
-      action: "mailto:info@letme.com"
-    },
-    {
-      icon: Phone,
-      title: "Phone",
-      details: "01234 567 890",
-      description: "Call us during business hours",
-      action: "tel:01234567890"
+      action: "mailto:office@letme.com"
     },
     {
       icon: MapPin,

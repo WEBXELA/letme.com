@@ -2,12 +2,8 @@ import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ArrowRight, MapPin, Home, CreditCard, Mail, Phone, CheckCircle, Star } from "lucide-react";
+import { ArrowRight, MapPin, Star } from "lucide-react";
 import { Link } from "react-router-dom";
-import room1 from "@/assets/room-1.jpg";
-import room2 from "@/assets/room-2.jpg";
-import room3 from "@/assets/room-3.jpg";
 
 const Index = () => {
   const areas = [
@@ -16,15 +12,6 @@ const Index = () => {
     { name: "Yeovil", href: "/yeovil", description: "Charming town in Somerset" },
     { name: "Weymouth", href: "/weymouth", description: "Seaside resort with stunning views" },
     { name: "Portsmouth", href: "/portsmouth", description: "Historic port city with rich heritage" }
-  ];
-
-  const features = [
-    "All utility bills included",
-    "Zero deposit with guarantor",
-    "Fully furnished accommodation",
-    "Professional cleaning service",
-    "24/7 customer support",
-    "Flexible rental terms"
   ];
 
   const testimonials = [
@@ -144,140 +131,9 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Features Section */}
-        <section className="py-10 md:py-16 bg-secondary/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-6xl mx-auto">
-              <div className="text-center mb-8 md:mb-12">
-                <h2 className="font-heading text-2xl md:text-4xl font-bold mb-2 md:mb-4">Why Choose LetMe?</h2>
-                <p className="text-muted-foreground text-sm md:text-lg">Everything you need for comfortable living</p>
-              </div>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {features.map((feature, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 md:p-4 bg-card rounded-lg shadow-soft">
-                    <div className="flex-shrink-0 mt-1">
-                      <div className="h-5 w-5 md:h-6 md:w-6 rounded-full bg-primary/10 flex items-center justify-center">
-                        <CheckCircle className="h-3 w-3 md:h-4 md:w-4 text-primary" />
-                      </div>
-                    </div>
-                    <p className="text-foreground text-sm md:text-base font-medium">{feature}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Property Showcase */}
-        <section className="py-10 md:py-24 bg-background">
-          <div className="container mx-auto px-4">
-            <div className="max-w-6xl mx-auto">
-              <div className="text-center mb-8 md:mb-12">
-                <h2 className="font-heading text-2xl md:text-4xl font-bold mb-2 md:mb-4">Featured Properties</h2>
-                <p className="text-muted-foreground text-sm md:text-lg">Take a look at some of our beautiful accommodations</p>
-              </div>
 
-              <div className="grid md:grid-cols-3 gap-8">
-                <Card className="overflow-hidden shadow-medium hover:shadow-large transition-all duration-300 hover:scale-105 border-none">
-                  <div className="relative h-40 md:h-64 overflow-hidden">
-                    <img
-                      src={room1}
-                      alt="Modern Double Room"
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                    />
-                    <div className="absolute top-4 right-4">
-                      <Badge className="bg-accent text-accent-foreground shadow-medium">
-                        Available
-                      </Badge>
-                    </div>
-                  </div>
-                  <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
-                    <h3 className="font-heading text-lg md:text-xl font-bold text-foreground">
-                      Modern Double Room
-                    </h3>
-                    <p className="text-muted-foreground text-xs md:text-sm">
-                      Beautifully furnished room with all amenities included
-                    </p>
-                    <div className="flex items-center justify-between pt-4 border-t border-border">
-                      <div>
-                        <p className="text-xs md:text-sm text-muted-foreground">From</p>
-                        <p className="text-xl md:text-2xl font-bold text-primary">£650/month</p>
-                      </div>
-                      <Button size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="overflow-hidden shadow-medium hover:shadow-large transition-all duration-300 hover:scale-105 border-none">
-                  <div className="relative h-40 md:h-64 overflow-hidden">
-                    <img
-                      src={room2}
-                      alt="Contemporary Studio"
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                    />
-                    <div className="absolute top-4 right-4">
-                      <Badge className="bg-accent text-accent-foreground shadow-medium">
-                        Available
-                      </Badge>
-                    </div>
-                  </div>
-                  <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
-                    <h3 className="font-heading text-lg md:text-xl font-bold text-foreground">
-                      Contemporary Studio
-                    </h3>
-                    <p className="text-muted-foreground text-xs md:text-sm">
-                      Spacious studio with kitchen and en-suite bathroom
-                    </p>
-                    <div className="flex items-center justify-between pt-4 border-t border-border">
-                      <div>
-                        <p className="text-xs md:text-sm text-muted-foreground">From</p>
-                        <p className="text-xl md:text-2xl font-bold text-primary">£850/month</p>
-                      </div>
-                      <Button size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="overflow-hidden shadow-medium hover:shadow-large transition-all duration-300 hover:scale-105 border-none">
-                  <div className="relative h-40 md:h-64 overflow-hidden">
-                    <img
-                      src={room3}
-                      alt="Spacious 2-Bed Flat"
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                    />
-                    <div className="absolute top-4 right-4">
-                      <Badge className="bg-accent text-accent-foreground shadow-medium">
-                        Available
-                      </Badge>
-                    </div>
-                  </div>
-                  <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
-                    <h3 className="font-heading text-lg md:text-xl font-bold text-foreground">
-                      Spacious 2-Bed Flat
-                    </h3>
-                    <p className="text-muted-foreground text-xs md:text-sm">
-                      Perfect for couples or small families
-                    </p>
-                    <div className="flex items-center justify-between pt-4 border-t border-border">
-                      <div>
-                        <p className="text-xs md:text-sm text-muted-foreground">From</p>
-                        <p className="text-xl md:text-2xl font-bold text-primary">£1,200/month</p>
-                      </div>
-                      <Button size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </div>
-        </section>
 
         {/* Testimonials */}
         <section className="py-16 bg-secondary/30">
