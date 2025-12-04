@@ -16,21 +16,21 @@ const Index = () => {
 
   const testimonials = [
     {
-      name: "Sarah Johnson",
-      location: "Bournemouth",
-      text: "LetMe made finding accommodation so easy. All bills included and zero deposit - perfect for students!",
+      name: "J.A.",
+      location: "Bournemouth Triangle",
+      text: "I have been there for a year now it's secure and I love the privacy of the property.",
       rating: 5
     },
     {
-      name: "Mike Chen",
-      location: "Portsmouth",
-      text: "Great service and beautiful properties. The team was very helpful throughout the process.",
+      name: "A.P.",
+      location: "Boscombe",
+      text: "Very helpful! On the ball and professional",
       rating: 5
     },
     {
-      name: "Emma Williams",
-      location: "Weymouth",
-      text: "Love my new place! Everything was ready when I moved in and the location is perfect.",
+      name: "R.P.",
+      location: "Lansdown, Bournemouth",
+      text: "You guys are great. Worlds apart from previous management. Many Thanks =)",
       rating: 5
     }
   ];

@@ -100,14 +100,8 @@ const Footer = () => {
             <div className="space-y-3">
               <div className="flex items-start gap-3">
                 <Mail className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                <a href="mailto:info@letme.com" className="text-background/80 hover:text-background transition-colors">
-                  info@letme.com
-                </a>
-              </div>
-              <div className="flex items-start gap-3">
-                <Phone className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                <a href="tel:01234567890" className="text-background/80 hover:text-background transition-colors">
-                  01234 567 890
+                <a href="mailto:office@letme.com" className="text-background/80 hover:text-background transition-colors">
+                  office@letme.com
                 </a>
               </div>
               <div className="flex items-start gap-3">
